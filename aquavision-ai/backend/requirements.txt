@@ -1,0 +1,6 @@
+fastapi>=0.95,<1
+uvicorn>=0.22,<1
+python-multipart>=0.0.6
+reportlab>=3.6
+pytest>=7,<9
+httpx>=0.23,<1

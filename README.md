@@ -107,6 +107,14 @@ py src/main.py --source "data/Deepfish/7398/train/output.mp4" --mode standard --
 > [!NOTE]  
 > This project was developed using Python 3.10
 
+## AquaVision AI Web Application
+
+The repository includes a local FastAPI + React/Vite application that reuses the pretrained weights in `models/` and the existing standard YOLOv8/ByteTrack processing path. It supports video uploads, ID-based track counts, model-label summaries, annotated video playback, and JSON/CSV/PDF reports. It does not train models, connect to IoT devices, or calculate evaluation metrics without ground truth.
+
+See [aquavision-ai/README.md](aquavision-ai/README.md) for installation, startup commands, API routes, and limitations. The original CLI below remains available and is not replaced by the web app.
+
+The web app reports unique tracker IDs per video, not guaranteed distinct biological fish. Species-level labels depend on the selected model; the F4K model is single-class. Job metadata is in memory and is cleared when the backend restarts, while generated video and report data remain in `outputs/aquavision-ai/`.
+
 
 ---
 

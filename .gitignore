@@ -4,6 +4,11 @@ src/object_detector/runs/train/*/weights
 _pycache__
 */*/__pycache__
 */__pycache__
+aquavision-ai/backend/**/__pycache__/
+aquavision-ai/backend/.pytest_cache/
+aquavision-ai/frontend/node_modules/
+aquavision-ai/frontend/dist/
+outputs/aquavision-ai/
 .DS_Store
 *.aux
 *.log

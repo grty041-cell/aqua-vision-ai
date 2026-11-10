@@ -1,15 +1,17 @@
 import cv2
 from pathlib import Path
 import numpy as np
-
-
-
-import cv2
-from pathlib import Path
-import numpy as np
+from typing import Callable, Optional
 
 # --- STANDARD REAL-TIME / SINGLE-PASS ---
-def run_standard_pipeline(yolo_model, input_source, output_dir, tracker_config_path):
+def run_standard_pipeline(
+    yolo_model,
+    input_source,
+    output_dir,
+    tracker_config_path,
+    show_window=True,
+    on_frame: Optional[Callable[[int, list], None]] = None,
+):
     """
     Executes a real-time pipeline that adapts its labeling strategy based on the
     provided YOLO model (single-class vs. multi-class).
@@ -20,11 +22,15 @@ def run_standard_pipeline(yolo_model, input_source, output_dir, tracker_config_p
     
     video_writer = None
     txt_file = None
-    
+    video_output_path = None
+    txt_output_path = None
+
     if not is_real_time:
         video_path = Path(input_source)
         video_output_path = Path(output_dir) / "videos/standard" / f"{video_path.stem}_standard_classified.mp4"
         txt_output_path = Path(output_dir) / "logs/standard" / f"{video_path.stem}_standard_results.txt"
+        video_output_path.parent.mkdir(parents=True, exist_ok=True)
+        txt_output_path.parent.mkdir(parents=True, exist_ok=True)
         txt_file = open(txt_output_path, "w")
 
         cap_meta = cv2.VideoCapture(input_source)
@@ -37,60 +43,82 @@ def run_standard_pipeline(yolo_model, input_source, output_dir, tracker_config_p
     # This buffer is only needed for multi-class models to stabilize labels.
     species_map = {}
 
-    print(f"\n🚀 Starting Standard Real-Time Pipeline (Config: {tracker_config_path})... Press 'q' to quit.")
+    if show_window:
+        print(f"\n🚀 Starting Standard Real-Time Pipeline (Config: {tracker_config_path})... Press 'q' to quit.")
+    else:
+        print(f"\n🚀 Starting Standard Pipeline (Config: {tracker_config_path})...")
     
     # --- MAIN PROCESSING LOOP ---
     results_generator = yolo_model.track(source=input_source, stream=True, persist=True, conf=0.3, tracker=tracker_config_path, verbose=False)
 
-    for frame_number, results in enumerate(results_generator, 1):
-        frame = results.orig_img
+    try:
+        for frame_number, results in enumerate(results_generator, 1):
+            frame = results.orig_img
+            frame_detections = []
 
-        if results.boxes.id is not None:
-            boxes_xyxy = results.boxes.xyxy.cpu().numpy()
-            track_ids = results.boxes.id.int().cpu().tolist()
-            confs = results.boxes.conf.cpu().numpy()
-            class_ids = results.boxes.cls.int().cpu().tolist()
+            if results.boxes is not None and results.boxes.id is not None:
+                boxes_xyxy = results.boxes.xyxy.cpu().numpy()
+                track_ids = results.boxes.id.int().cpu().tolist()
+                confs = results.boxes.conf.cpu().numpy()
+                class_ids = results.boxes.cls.int().cpu().tolist()
 
-            for box, track_id, conf, cls_id in zip(boxes_xyxy, track_ids, confs, class_ids):
-                x1, y1, x2, y2 = map(int, box)
-                
-                if txt_file:
-                    width = x2 - x1
-                    height = y2 - y1
-                    txt_file.write(f"{frame_number},{track_id},{x1:.2f},{y1:.2f},{width:.2f},{height:.2f},{conf:.2f},-1,-1,-1\n")
+                for box, track_id, conf, cls_id in zip(boxes_xyxy, track_ids, confs, class_ids):
+                    x1, y1, x2, y2 = map(int, box)
 
-                if is_multiclass:
-                    # For multi-class models, use the confidence-based update strategy
-                    new_species = yolo_model.names[cls_id]
-                    current_best_conf = species_map.get(track_id, ("Unknown", 0.0))[1]
-                    if conf > current_best_conf:
-                        species_map[track_id] = (new_species, conf)
-                    species_name, _ = species_map.get(track_id, ("(tracking...)", 0.0))
-                else:
-                    # For single-class models, just use the "fish" label
-                    species_name = "fish"
-                label_text = f"id:{track_id} {species_name}"
-                
-                color = tuple(colors[track_id % 100].tolist())
-                (w_text, h_text), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                cv2.rectangle(frame, (x1, y1 - 20), (x1 + w_text, y1), color, -1)
-                cv2.putText(frame, label_text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                    if txt_file:
+                        width = x2 - x1
+                        height = y2 - y1
+                        txt_file.write(f"{frame_number},{track_id},{x1:.2f},{y1:.2f},{width:.2f},{height:.2f},{conf:.2f},-1,-1,-1\n")
 
-        cv2.imshow("Fish Pipeline", frame)
+                    if is_multiclass:
+                        new_species = yolo_model.names[cls_id]
+                        current_best_conf = species_map.get(track_id, ("Unknown", 0.0))[1]
+                        if conf > current_best_conf:
+                            species_map[track_id] = (new_species, conf)
+                        species_name, _ = species_map.get(track_id, ("(tracking...)", 0.0))
+                    else:
+                        species_name = "fish"
+
+                    frame_detections.append({
+                        "track_id": track_id,
+                        "class_id": cls_id,
+                        "species": species_name,
+                        "confidence": float(conf),
+                        "bbox_xyxy": [float(value) for value in box],
+                    })
+                    label_text = f"id:{track_id} {species_name}"
+
+                    color = tuple(colors[track_id % 100].tolist())
+                    (w_text, h_text), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                    cv2.rectangle(frame, (x1, y1 - 20), (x1 + w_text, y1), color, -1)
+                    cv2.putText(frame, label_text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+
+            if on_frame is not None:
+                on_frame(frame_number, frame_detections)
+            if show_window:
+                cv2.imshow("Fish Pipeline", frame)
+            if video_writer:
+                video_writer.write(frame)
+            if show_window and cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    finally:
         if video_writer:
-            video_writer.write(frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            video_writer.release()
+        if txt_file:
+            txt_file.close()
+        if show_window:
+            cv2.destroyAllWindows()
 
     if video_writer:
-        video_writer.release()
         print(f"🎥 Final video saved to: {video_output_path}")
-    if txt_file:
-        txt_file.close()
+    if txt_output_path:
         print(f"📄 Tracking data saved to: {txt_output_path}")
-    cv2.destroyAllWindows()
     print("✅ Pipeline stopped.")
+    return {
+        "video_path": str(video_output_path) if video_output_path else None,
+        "tracking_path": str(txt_output_path) if txt_output_path else None,
+    }
 
 
 # --- BUFFERED REAL-TIME (SINGLE-PASS, DELAYED) ---
