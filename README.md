@@ -1,6 +1,6 @@
 <div align="center">
     <h1>Underwater Fish Detection, Tracking, and Classification</h1>
-    <h3>Authors: Anubhab Roy , Bit mesra ece sem 3 </h3>
+    <h3>Authors: Anubhab Roy </h3>
     <h6>Final project of the Deep Learning course - UniTs</h6>
 </div>
 
